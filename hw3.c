@@ -143,7 +143,7 @@ void process_guess(int client_fd, const char *guess, const char *hidden_word) {
 // Helper function to check if a word is valid from the dictionary.
 bool is_valid_word(const char *guess, char **words, int num_words) {
     for (int i = 0; i < num_words; i++) {
-        if (strcmp(guess, words[i]) == 0) {
+        if (strcmp(guess, *(words + i)) == 0) {
             return true;
         }
     }
