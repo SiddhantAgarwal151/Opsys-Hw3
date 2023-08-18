@@ -38,7 +38,7 @@ volatile bool end = false;
 
 bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
     for (int i = 0; i < dictSize; i++) {
-        if (strncmp(guess, dictionary[i],MAX_WORD_LENGTH-1) == 0) {
+        if (strncmp(guess, *(dictionary + i),MAX_WORD_LENGTH-1) == 0) {
             return true;
         }
     }
@@ -48,7 +48,6 @@ bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
 int generateResult(const char *hiddenWord, const char *guess, char **dictionary, int dictSize, char *result) {
     if (!isWordInDictionary(guess, dictionary, dictSize)) {
         strcpy(result, "?????");
-        printf("here\n");
         return INVALID_GUESS;
     }
     char* guessCopy = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
@@ -61,10 +60,10 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
 
     // Step 1: Handle exact matches (uppercase letters)
     for (int i = 0; i < 5; i++) {
-        if (guess[i] == hiddenWordCopy[i]) {
-            result[i] = hiddenWordCopy[i] - 32;  // Convert to uppercase
-            guessCopy[i] = '-';
-            hiddenWordCopy[i] = '-';
+        if (*(guess + i) == *(hiddenWordCopy + i)) {
+            *(result + i) = *(hiddenWordCopy + i) - 32;  // Convert to uppercase
+            *(guessCopy + i) = '-';
+            *(hiddenWordCopy + i) = '-';
         }
     }
 
@@ -75,14 +74,14 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
 
     // Step 2: Handle lowercase letters (letters in hidden word but not in correct position)
     for (int i = 0; i < 5; i++) {
-        if (result[i] != '?' || guessCopy[i] == '-') {
+        if (*(result + i) != '?' || *(guessCopy + i) == '-') {
             continue;  // Skip if already matched or already processed
         }
         for (int j = 0; j < 5; j++) {
-            if (guess[i] == hiddenWordCopy[j]) {
-                result[i] = hiddenWordCopy[j];
-                guessCopy[i] = '-';
-                hiddenWordCopy[j] = '-';
+            if (*(guess +i) == *(hiddenWordCopy + j)) {
+                *(result + i) = *(hiddenWordCopy + j);
+                *(guessCopy + i) = '-';
+                *(hiddenWordCopy + j) = '-';
                 break;
             }
         }
@@ -90,24 +89,25 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
 
     // Step 3: Handle '-' (incorrect letters not in hidden word)
     for (int i = 0; i < 5; i++) {
-        if (result[i] == '?' && guessCopy[i] != '-') {
-            result[i] = '-';
+        if (*(result + i) == '?' && *(guessCopy + i) != '-') {
+            *(result + i) = '-';
         }
     }
 
     // Step 4: Handle duplicates
     for (int i = 0; i < 5; i++) {
-        if (guessCopy[i] != '-') {
+        if (*(guessCopy + i) != '-') {
             for (int j = 0; j < 5; j++) {
-                if (guessCopy[i] == hiddenWordCopy[j]) {
-                    if (result[j] == '?') {
-                        result[j] = hiddenWordCopy[j];
+                if (*(guessCopy + i) == *(hiddenWordCopy + j)) {
+                    if (*(result + j) == '?') {
+                        *(result + j) = *(hiddenWordCopy + j);
                     }
                 }
             }
         }
     }
-    printf("here2\n");
+    free(guessCopy);
+    free(hiddenWordCopy);
     return WRONG_GUESS;
 }
 
@@ -127,6 +127,8 @@ void *handle_client(void * arg){
     printf("%s\n",hiddenWord);
     //---------------------------Client Waiting Messages----------------------------------
     char* guess = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+    char* result = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+    char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
     while(guessRemaining>=0){
         //================================Receiving Data======================================
         printf("THREAD %lu: waiting for guess\n",threadID);
@@ -139,7 +141,7 @@ void *handle_client(void * arg){
             printf("Client disconnected\n");
             break;
         }
-        guess[bytesRead] = '\0';
+        *(guess + bytesRead) = '\0';
         printf("THREAD %lu: rcvd guess: %s\n",threadID,guess);
         
         //=================================Process Data=======================================
@@ -147,7 +149,6 @@ void *handle_client(void * arg){
         for (int i = 0; *(guess+i); i++) {
             *(guess+i) = tolower(*(guess+i));
         }
-        char* result = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
         int status = generateResult(hiddenWord,guess,dictionary,num_words,result);
         //================================Process the guess result============================
         
@@ -157,7 +158,6 @@ void *handle_client(void * arg){
             // reply.validGuess = 'Y';
             // reply.guessesRemaining = htons(guessRemaining);
             // reply.result = result;
-            char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
             *(response + 0) = 'Y'; 
             strncpy(response + 3, result, 5); // Copy 5 byte result word  
             *(short *)(response + 1) = htons(guessRemaining); // 2 byte remaining guesses
@@ -171,7 +171,6 @@ void *handle_client(void * arg){
         }
         else if(status == WRONG_GUESS){
             guessRemaining--;
-            char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
             *(response + 0) = 'Y'; 
             strncpy(response + 3, result, 5); // Copy 5 byte result word  
             *(short *)(response + 1) = htons(guessRemaining); // 2 byte remaining guesses
@@ -182,7 +181,6 @@ void *handle_client(void * arg){
             printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
         }
         else if(status == INVALID_GUESS){
-            char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
             *(response + 0) = 'N'; 
             strncpy(response + 3, result, 5); // Copy 5 byte result word  
             *(short *)(response + 1) = htons(guessRemaining); // 2 byte remaining guesses
@@ -193,6 +191,11 @@ void *handle_client(void * arg){
             printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
         }
     }
+    // Free memory  
+    free(guess);
+    free(response);
+    free(result);
+    free(hiddenWord);
     close(client_sd);
 }
 
@@ -329,6 +332,8 @@ void sigusr1_handler(int signo) {
 
 int wordle_server(int argc, char **argv) {
     // Parse command-line arguments and validate inputs.
+    signal(SIGUSR1, sigusr1_handler);
+
     if (argc != 5) {
         fprintf(stderr, "ERROR: Invalid argument(s)\nUSAGE: %s <listener-port> <seed> <dictionary-filename> <num-words>\n", *(argv + 0));
         return EXIT_FAILURE;
@@ -341,7 +346,7 @@ int wordle_server(int argc, char **argv) {
 
     srand(seed);
 
-    char **dictionary = (char **)malloc((num_words + 1) * sizeof(char *)); // +1 for NULL pointer
+    char **dictionary = (char **)calloc((num_words + 1), sizeof(char *)); // +1 for NULL pointer
     if (!dictionary) {
         fprintf(stderr, "ERROR: Memory allocation failed for dictionary\n");
         exit(EXIT_FAILURE);
@@ -355,7 +360,8 @@ int wordle_server(int argc, char **argv) {
 
     //char *line = line + MAX_WORD_LENGTH + 1; // +1 for null terminator
     int i = 0;
-    char *line = calloc(MAX_WORD_LENGTH+1,sizeof(char));
+    char *line = calloc(MAX_WORD_LENGTH + 2, sizeof(char)); // Allocate enough space for the word, newline, and null terminator
+
 
     while (fgets(line, sizeof(line), file) != NULL) {
         // Remove newline character from the end of the word.
@@ -365,8 +371,8 @@ int wordle_server(int argc, char **argv) {
         }
 
         // Allocate memory for the word and copy it into the dictionary.
-        *(dictionary + i) = malloc(strlen(line) + 1);
-        strcpy((*(dictionary + i)), line);
+        //*(dictionary + i) = calloc(strlen(line) + 1, sizeof(char));
+        *(dictionary + i) = strdup(line);
         if (!*(dictionary + i)) {
             fprintf(stderr, "ERROR: Memory allocation failed for dictionary word\n");
             exit(EXIT_FAILURE);
@@ -408,7 +414,7 @@ int wordle_server(int argc, char **argv) {
     printf("MAIN: Wordle server listening on port {%d}\n",listener_port);
 
      //-----------------------------Receive Client Connection----------------------------------
-    while(1){
+    while(!end){
         // Accept an incoming connection
         struct sockaddr_in remote_client;
         int addrlen = sizeof( remote_client );
