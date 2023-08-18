@@ -22,6 +22,13 @@ extern char **words;
 #define WRONG_GUESS 1
 #define CORRECT_GUESS 2
 
+// Bundle the variables into a certain format
+struct ServerReply{
+    char validGuess;
+    short guessesRemaining;
+    char* result;
+};
+
 bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
     for (int i = 0; i < dictSize; i++) {
         if (strcmp(guess, dictionary[i]) == 0) {
@@ -98,7 +105,7 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
 
 /* The actual Wordle Logic would be implemented under threads*/
 void *handle_client(void * arg, char **dictionary, int num_words){
-    int client_fd = *((int *)arg);
+    int client_sd = *((int *)arg);
     int randomIndex = rand() % num_words;
     char *hiddenWord = *(dictionary + randomIndex);
     pthread_t threadID = pthread_self();
@@ -110,7 +117,7 @@ void *handle_client(void * arg, char **dictionary, int num_words){
     while(guessRemaining>=0){
         //================================Receiving Data======================================
         printf("THREAD %lu: waiting for guess\n",threadID);
-        int bytesRead = recv(client_fd, guess, MAX_WORD_LENGTH, 0);
+        int bytesRead = recv(client_sd, guess, MAX_WORD_LENGTH, 0);
         if (bytesRead == -1){
             perror("Error receiving data");
             break;
@@ -121,8 +128,7 @@ void *handle_client(void * arg, char **dictionary, int num_words){
         }
         guess[bytesRead] = '\0';
         printf("THREAD %lu: rcvd guess: %s\n",threadID,guess);
-        guessRemaining--;
-
+        
         //=================================Process Data=======================================
         // casting every words into lower case
         for (int i = 0; *(guess+i); i++) {
@@ -132,16 +138,46 @@ void *handle_client(void * arg, char **dictionary, int num_words){
         int status = generateResult(hiddenWord,guess,dictionary,num_words,result);
 
         //================================Process the guess result============================
-        printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
+        
         if(status == CORRECT_GUESS){
-            
+            guessRemaining--;
+            struct ServerReply reply;
+            reply.validGuess = 'Y';
+            reply.guessesRemaining = htons(guessRemaining);
+            reply.result = result;
+            ssize_t bytes_sent = send(client_sd, &reply, sizeof(reply), 0);
+            if (bytes_sent == -1) {
+                perror("Error sending server reply");
+            }
+            printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
             printf("THREAD %lu: game over; word was %s!\n",threadID,result);
             break;
         }
-
-
-
+        else if(status == WRONG_GUESS){
+            guessRemaining--;
+            struct ServerReply reply;
+            reply.validGuess = 'Y';
+            reply.guessesRemaining = htons(guessRemaining);
+            reply.result = result;
+            ssize_t bytes_sent = send(client_sd, &reply, sizeof(reply), 0);
+            if (bytes_sent == -1) {
+                perror("Error sending server reply");
+            }
+            printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
+        }
+        else if(status == INVALID_GUESS){
+            struct ServerReply reply;
+            reply.validGuess = 'N';
+            reply.guessesRemaining = htons(guessRemaining);
+            reply.result = result;
+            ssize_t bytes_sent = send(client_sd, &reply, sizeof(reply), 0);
+            if (bytes_sent == -1) {
+                perror("Error sending server reply");
+            }
+            printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
+        }
     }
+    close(client_sd);
 }
 
 
