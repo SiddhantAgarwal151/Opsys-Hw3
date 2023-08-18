@@ -175,8 +175,9 @@ int wordle_server(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    char *line = line + MAX_WORD_LENGTH + 1; // +1 for null terminator
+    //char *line = line + MAX_WORD_LENGTH + 1; // +1 for null terminator
     int i = 0;
+    char *line = calloc(MAX_WORD_LENGTH+1,sizeof(char));
 
     while (fgets(line, sizeof(line), file) != NULL) {
         // Remove newline character from the end of the word.
