@@ -21,13 +21,13 @@ extern char **words;
 void send_ready_message(int client_fd);
 void close_client_connection(int client_fd);
 void *handle_client(void *arg);
-void send_reply(int client_fd, bool valid_guess, int guesses_remaining, const char *result);
+void send_reply(int client_fd, bool valid_guess, short guesses_remaining, const char *result);
 void process_guess(int client_fd, const char *guess, const char *hidden_word);
 bool is_valid_word(const char *guess, char **words, int num_words);
 
 void send_ready_message(int client_fd) {
     const char *ready_msg = "ready";
-    send_reply(client_fd, true, MAX_GUESSES, ready_msg);
+    send_reply(client_fd, true, htons(MAX_GUESSES), ready_msg);
 }
 
 // Helper function to close the client connection and exit the thread.
@@ -45,15 +45,14 @@ void *handle_client(void *arg) {
     send_ready_message(client_fd);
 
     // Start the game loop to receive and process guesses until the game ends or the client disconnects.
-    char *hidden_word = hidden_word + MAX_WORD_LENGTH + 1; // +1 for null terminator
+    char *hidden_word = calloc(MAX_WORD_LENGTH + 1, sizeof(char)); // +1 for null terminator
     // Generate or choose a hidden word here and store it in the hidden_word array.
 
-    char *guess_end = guess_end + MAX_WORD_LENGTH + 1; // +1 for null terminator
+    char *guess_end = calloc(MAX_WORD_LENGTH + 1, sizeof(char)); // +1 for null terminator
 
     while (true) {
         // Receive the guess from the client.
         int bytes_received = recv(client_fd, guess_end, MAX_WORD_LENGTH, 0);
-
         if (bytes_received <= 0) {
             // Client disconnected or error occurred.
             fprintf(stderr, "THREAD %lu: Client disconnected; closing TCP connection...\n", pthread_self());
@@ -73,7 +72,7 @@ void *handle_client(void *arg) {
 }
 
 // Helper function to send the reply back to the client.
-void send_reply(int client_fd, bool valid_guess, int guesses_remaining, const char *result) {
+void send_reply(int client_fd, bool valid_guess, short guesses_remaining, const char *result) {
     char* reply_buffer = calloc(9, sizeof(char)); // 1 byte for valid_guess, 2 bytes for guesses_remaining, 5 bytes for result, and 1 byte for null terminator
     char *ptr = reply_buffer + 1; // Start after the first byte for valid_guess
     snprintf(ptr, 3, "%02d", guesses_remaining);
@@ -91,7 +90,7 @@ void send_reply(int client_fd, bool valid_guess, int guesses_remaining, const ch
 
 // Implement the process_guess() function to process the client's guess.
 void process_guess(int client_fd, const char *guess, const char *hidden_word) {
-    int guesses_remaining = MAX_GUESSES;
+    short guesses_remaining = htons(MAX_GUESSES);
     char* result = calloc(MAX_WORD_LENGTH + 1, sizeof(char)); // +1 for null terminator
 
     if (strlen(guess) != MAX_WORD_LENGTH) {
