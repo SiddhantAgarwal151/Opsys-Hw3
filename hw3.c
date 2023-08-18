@@ -18,139 +18,47 @@ extern int total_wins;
 extern int total_losses;
 extern char **words;
 
-void send_ready_message(int client_fd);
-void close_client_connection(int client_fd);
-void *handle_client(void *arg);
-void send_reply(int client_fd, bool valid_guess, short guesses_remaining, const char *result);
-void process_guess(int client_fd, const char *guess, const char *hidden_word);
-bool is_valid_word(const char *guess, char **words, int num_words);
-
-void send_ready_message(int client_fd) {
-    const char *ready_msg = "ready";
-    send_reply(client_fd, true, htons(MAX_GUESSES), ready_msg);
-}
-
-// Helper function to close the client connection and exit the thread.
-void close_client_connection(int client_fd) {
-    close(client_fd);
-    pthread_exit(NULL);
-}
-
-// Implement the handle_client() function that each child thread will execute to handle a client.
-void *handle_client(void *arg) {
-    // Get the client_fd from the argument.
-    int client_fd = *((int *)arg);
-
-    // Send an initial "ready" message to the client.
-    send_ready_message(client_fd);
-
-    // Start the game loop to receive and process guesses until the game ends or the client disconnects.
-    char *hidden_word = calloc(MAX_WORD_LENGTH + 1, sizeof(char)); // +1 for null terminator
-    // Generate or choose a hidden word here and store it in the hidden_word array.
-
-    char *guess_end = calloc(MAX_WORD_LENGTH + 1, sizeof(char)); // +1 for null terminator
-
-    while (true) {
-        // Receive the guess from the client.
-        int bytes_received = recv(client_fd, guess_end, MAX_WORD_LENGTH, 0);
-        if (bytes_received <= 0) {
-            // Client disconnected or error occurred.
-            fprintf(stderr, "THREAD %lu: Client disconnected; closing TCP connection...\n", pthread_self());
-            close_client_connection(client_fd);
-        }
-
-        // Null-terminate the received guess string.
-        *(guess_end + bytes_received) = '\0';
-
-        // Process the client's guess.
-        process_guess(client_fd, guess_end, hidden_word);
-    }
-
-    // Close the client connection and exit the thread.
-    close_client_connection(client_fd);
-    return NULL;
-}
-
-// Helper function to send the reply back to the client.
-void send_reply(int client_fd, bool valid_guess, short guesses_remaining, const char *result) {
-    char* reply_buffer = calloc(9, sizeof(char)); // 1 byte for valid_guess, 2 bytes for guesses_remaining, 5 bytes for result, and 1 byte for null terminator
-    char *ptr = reply_buffer + 1; // Start after the first byte for valid_guess
-    snprintf(ptr, 3, "%02d", guesses_remaining);
-    ptr += 2;
-    strncpy(ptr, result, MAX_WORD_LENGTH);
-    *(reply_buffer + 0) = valid_guess ? 'Y' : 'N'; // Set the first byte for valid_guess
-    *(reply_buffer + 8) = '\0';
-    int bytes_sent = send(client_fd, reply_buffer, 8, 0);
-    if (bytes_sent != 8) {
-        fprintf(stderr, "THREAD %lu: Error sending reply to client\n", pthread_self());
-        close_client_connection(client_fd);
-    }
-    free(reply_buffer);
-}
-
-// Implement the process_guess() function to process the client's guess.
-void process_guess(int client_fd, const char *guess, const char *hidden_word) {
-    short guesses_remaining = htons(MAX_GUESSES);
-    char* result = calloc(MAX_WORD_LENGTH + 1, sizeof(char)); // +1 for null terminator
-
-    if (strlen(guess) != MAX_WORD_LENGTH) {
-        // Invalid guess, not 5-letter word
-        send_reply(client_fd, false, guesses_remaining, "?????");
-        return;
-    }
-
-    total_guesses++;
-
-    // Check if the guess is a valid word from the dictionary
-    if (!is_valid_word(guess, words, MAX_WORD_LENGTH)) {
-        // Invalid guess, not present in the dictionary
-        send_reply(client_fd, false, guesses_remaining, "?????");
-        return;
-    }
-
-    // Process the guess and calculate the result
-    char *result_ptr = result;
-    const char *hidden_ptr = hidden_word;
-    for (int i = 0; i < MAX_WORD_LENGTH; i++) {
-        if (*guess == *hidden_ptr) {
-            *result_ptr = toupper(*guess); // Matching letter in the correct position
-        } else if (strchr(hidden_word, *guess)) {
-            *result_ptr = tolower(*guess); // Letter in the word but in an incorrect position
-        } else {
-            *result_ptr = '-'; // Incorrect letter not in the word
-        }
-        guess++;
-        hidden_ptr++;
-        result_ptr++;
-    }
-    *result_ptr = '\0'; // Null terminator
-
-    // Check if the guess matches the hidden word
-    if (strcmp(result, hidden_word) == 0) {
-        // Client guessed the word correctly
-        total_wins++;
-        send_reply(client_fd, true, guesses_remaining, result);
-        fprintf(stdout, "THREAD %lu: Game over; word was %s!\n", pthread_self(), hidden_word);
-        close_client_connection(client_fd);
-    } else {
-        // Valid guess, but not the correct word
-        guesses_remaining--;
-        send_reply(client_fd, true, guesses_remaining, result);
-    }
-}
-
-// Helper function to check if a word is valid from the dictionary.
-bool is_valid_word(const char *guess, char **words, int num_words) {
+bool valid_guess(const char *guess, const char **dictionary, int num_words) {
     for (int i = 0; i < num_words; i++) {
-        if (strcmp(guess, *(words + i)) == 0) {
-            return true;
+        if (strcmp(guess, *(dictionary + i)) == 0) {
+            return true; // Guess is valid
         }
     }
-    return false;
+    return false; // Guess is not valid
+}
+
+int partial_match(const char *guess, const char *target) {
+    int match_count = 0;
+    int *guess_freq = calloc(26, sizeof(int));
+    int *target_freq = calloc(26, sizeof(int));
+
+    // Count the frequency of characters in the guess
+    for (int i = 0; *(guess + i); i++) {
+        if (isalpha(*(guess + i))) {
+            *(guess_freq + tolower(*(guess + i)) - 'a') += 1;
+        }
+    }
+
+    // Count the frequency of characters in the target word
+    for (int i = 0; *(target + i); i++) {
+        if (isalpha(*(target + i))) {
+            *(target_freq + tolower(*(target + i)) - 'a') += 1;
+        }
+    }
+
+    // Calculate the minimum frequency of matching characters
+    for (int i = 0; i < 26; i++) {
+        match_count += (*(guess_freq + i) < *(target_freq + i)) ? *(guess_freq + i) : *(target_freq + i);
+    }
+    free(guess_freq);
+    free(target_freq);
+
+    return match_count;
 }
 
 
 int wordle_server(int argc, char **argv) {
+    char *target_word = "mouth";
     // Parse command-line arguments and validate inputs.
     if (argc != 5) {
         fprintf(stderr, "ERROR: Invalid argument(s)\nUSAGE: %s <listener-port> <seed> <dictionary-filename> <num-words>\n", *(argv + 0));
@@ -186,14 +94,19 @@ int wordle_server(int argc, char **argv) {
         }
 
         // Allocate memory for the word and copy it into the dictionary.
-        *(dictionary + i) = strdup(line);
+        *(dictionary + i) = malloc(strlen(line) + 1);
+        strcpy((*(dictionary + i)), line);
         if (!*(dictionary + i)) {
             fprintf(stderr, "ERROR: Memory allocation failed for dictionary word\n");
             exit(EXIT_FAILURE);
         }
 
         i++;
+        // Free each word  
+
     }
+    free(line); //causes issue
+
 
     fclose(file);
     *(dictionary + i) = NULL; // Set the last entry to NULL for easier iteration.
@@ -224,30 +137,83 @@ int wordle_server(int argc, char **argv) {
     }
 
     printf("MAIN: Wordle server listening on port %d\n", listener_port);
-
     // Main server loop: accept incoming connections and create a child thread to handle each client.
+
     while (true) {
-        // Accept an incoming connection
-        struct sockaddr_in client_addr;
-        socklen_t client_addr_len = sizeof(client_addr);
-        int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
-        if (client_socket == -1) {
-            perror("Error accepting client connection");
-            continue;
-        }
-
-        // Create a child thread to handle the client
-        pthread_t thread;
-        if (pthread_create(&thread, NULL, handle_client, &client_socket) != 0) {
-            perror("Error creating thread");
-            close(client_socket);
-            continue;
-        }
-
-        // Detach the child thread to make it independent of the main thread
-        pthread_detach(thread);
+    // Accept an incoming connection
+    struct sockaddr_in client_addr;
+    socklen_t client_addr_len = sizeof(client_addr);
+    int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
+    if (client_socket == -1) {
+        perror("Error accepting client connection");
+        continue;
     }
 
-    // The server should never reach this point.
+    printf("SERVER: Accepted client connection\n");
+
+    // Receive a guess from the client
+    char *guess = calloc (MAX_WORD_LENGTH + 1, sizeof(char));
+    ssize_t bytes_received = recv(client_socket, guess, sizeof(guess) - 1, 0);
+    total_guesses++;
+    if (bytes_received <= 0) {
+        // Handle client disconnect or error
+        close(client_socket);
+        printf("SERVER: Client disconnected\n");
+        continue;
+    }
+    *(guess + bytes_received) = '\0'; // Null-terminate the received data
+
+    // ... Accept an incoming connection and receive a guess from the client ...
+    printf("huh\n");
+    // Process the guess and send response
+    char *response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
+    // Implement game logic and generate response here
+    // ... Implement game logic and generate response here ...
+
+    bool is_valid_guess = valid_guess(guess, dictionary, num_words);
+    int correct_guess_count = strcmp(guess, target_word) == 0 ? MAX_WORD_LENGTH : partial_match(guess, target_word);
+   
+    // Calculate the remaining guesses based on the total guesses and the guesses made by the client
+    
+    
+    // Generate the response based on the guess and the target word
+    char *response_word = calloc(MAX_WORD_LENGTH + 1, sizeof(char));
+    for (int i = 0; i < MAX_WORD_LENGTH; i++) {
+        if (*(guess + i) == *(target_word + i)) {
+            *(response_word + i) = toupper(*(guess + i)); // Uppercase for correct position
+        } else if (strchr(target_word, *(guess + i))) {
+            *(response_word + i) = tolower(*(guess + i)); // Lowercase for correct letter in wrong position
+        } else {
+            *(response_word + i) = '-'; // Dash for incorrect letter
+        }
+    }
+    *(response_word + MAX_WORD_LENGTH) = '\0';
+
+    *(response + 0) = is_valid_guess ? 'Y' : 'N'; // Valid guess indicator
+
+    *(short *)(response + 1) = htons(MAX_GUESSES - total_guesses); // 2 byte remaining guesses
+    strncpy(response + 3, response_word, 5); // Copy 5 byte result word  
+
+
+    send(client_socket, response, 8, 0); // Send 8 bytes
+    // Free memory  
+    free(guess);
+    free(response);
+    free(response_word);
+
+    // Send the response message to the client
+    //printf("%s", response);
+    // Close the client socket after handling the request
+    close(client_socket);
+    printf("SERVER: Client connection closed\n");
+    }
+
+ // The server should never reach this point.
+    for(int i = 0; i < num_words; i++) {
+    free(*(dictionary + i));
+    }
+    // Free dictionary and line buffer
+    free(dictionary);
+    free(line);
     return EXIT_FAILURE;
 }

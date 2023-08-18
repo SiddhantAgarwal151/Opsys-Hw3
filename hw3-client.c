@@ -18,7 +18,7 @@ int main()
   if ( sd == -1 ) { perror( "socket() failed" ); exit( EXIT_FAILURE ); }
 
   //struct hostent * hp = gethostbyname( "linux02.cs.rpi.edu" );
-    struct hostent * hp = gethostbyname( "localhost" );
+  struct hostent * hp = gethostbyname( "localhost" );
 
 
 #if 0
@@ -89,11 +89,12 @@ while ( 1 )    /* TO DO: fix the memory leaks! */
     printf( " -- %d guess%s remaining\n", guesses, guesses == 1 ? "" : "es" );
     if ( guesses == 0 ) break;
   }
+    printf("%s", buffer + 3);
+
 }
 
 
   printf( "CLIENT: disconnecting...\n" );
-
   close( sd );
 
   return EXIT_SUCCESS;
