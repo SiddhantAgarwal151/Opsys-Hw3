@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h> 
 #include <signal.h> // Add this header for signal handling
+#include <fcntl.h>
+#include <errno.h>
 
 // Constants
 #define MAX_WORD_LENGTH 6
@@ -34,7 +36,7 @@ extern int total_wins;
 extern int total_losses;
 extern char **words;
 // Global flag to control the server loop
-volatile bool end = false; 
+volatile int signal_received = 0;
 
 bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
     for (int i = 0; i < dictSize; i++) {
@@ -69,6 +71,9 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
 
     // If the guess is valid, return
     if(strcmp(guessCopy,hiddenWordCopy)==0){
+        printf("yes\n");
+        free(guessCopy);
+        free(hiddenWordCopy);
         return CORRECT_GUESS;
     }
 
@@ -121,17 +126,18 @@ void *handle_client(void * arg){
     int randomIndex = rand() % num_words;
     char* hiddenWord = calloc(MAX_WORD_LENGTH,sizeof(char));
     strcpy(hiddenWord, *(dictionary + randomIndex));
+    //hiddenWord = "sonic";
     pthread_t threadID = pthread_self();
     short guessRemaining = MAX_GUESSES;
 
     printf("%s\n",hiddenWord);
     //---------------------------Client Waiting Messages----------------------------------
-    char* guess = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
-    char* result = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
-    char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
     while(guessRemaining>=0){
         //================================Receiving Data======================================
         printf("THREAD %lu: waiting for guess\n",threadID);
+        char* guess = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+        char* result = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+        char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
         int bytesRead = recv(client_sd, guess, MAX_WORD_LENGTH, 0);
         if (bytesRead == -1){
             perror("Error receiving data");
@@ -179,6 +185,9 @@ void *handle_client(void * arg){
                 perror("Error sending server reply");
             }
             printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
+            if (guessRemaining == 0) {
+                printf("THREAD %ld: game over; word was %s!\n", pthread_self(), hiddenWord);
+            }
         }
         else if(status == INVALID_GUESS){
             *(response + 0) = 'N'; 
@@ -190,11 +199,16 @@ void *handle_client(void * arg){
             }
             printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
         }
+        // if (result.lower() == hiddenWord) {
+        //     printf("THREAD %ld: game over; word was %s!\n", pthread_self(), hiddenWord);
+        // }
+        free(guess);
+        free(response);
+        free(result);
     }
+    
     // Free memory  
-    free(guess);
-    free(response);
-    free(result);
+    
     free(hiddenWord);
     close(client_sd);
 }
@@ -285,8 +299,8 @@ void *handle_client(void * arg){
 // Signal handler function for SIGUSR1
 void sigusr1_handler(int signo) {
     if (signo == SIGUSR1) {
+        signal_received = 1; // Set the signal status
         printf("MAIN: SIGUSR1 received; Wordle server shutting down...\n");
-        end = true; // Set the game over flag
     }
 }
 
@@ -413,15 +427,26 @@ int wordle_server(int argc, char **argv) {
     }
     printf("MAIN: Wordle server listening on port {%d}\n",listener_port);
 
+    // Set listener socket to non-blocking
+    int flags = fcntl(listener, F_GETFL, 0);
+    fcntl(listener, F_SETFL, flags | O_NONBLOCK);
      //-----------------------------Receive Client Connection----------------------------------
-    while(!end){
+    while(!signal_received){
         // Accept an incoming connection
         struct sockaddr_in remote_client;
         int addrlen = sizeof( remote_client );
         int newsd = accept( listener, (struct sockaddr *)&remote_client,(socklen_t *)&addrlen );
-        if (newsd == -1){
-            perror( "accept() failed" ); continue; 
-        }
+        // if (newsd == -1){
+        //     if (errno == EWOULDBLOCK) {
+        //         continue; 
+        //     }
+        //     else {
+        //         perror("accept");
+        //         break;
+        //     }
+            
+      //  }
+        
         printf("MAIN: rcvd incoming connection request\n");
 
     //---------------------------Application Layer Multithread----------------------------------
@@ -438,10 +463,10 @@ int wordle_server(int argc, char **argv) {
 
         // Detach the child thread to make it independent of the main thread
         pthread_detach(thread);
-
     }
     
-
+    close(listener);
+    
 
  // The server should never reach this point.
     for(int i = 0; i < num_words; i++) {

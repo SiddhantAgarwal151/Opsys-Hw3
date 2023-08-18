@@ -52,13 +52,15 @@ int main()
   
 
   /* The implementation of the application protocol is below... */
-
+int extra = 0, length = 0;
 while ( 1 )    /* TO DO: fix the memory leaks! */
 {
+  int flag = 0;
   char * buffer = calloc( 9, sizeof( char ) );
   if ( fgets( buffer, 9, stdin ) == NULL ) break;
   if ( strlen( buffer ) != 6 ) { printf( "CLIENT: invalid -- try again\n" ); continue; }
-  *(buffer + 5) ='\0';   /* get rid of the '\n' */
+  length = strlen(buffer);
+  *(buffer + length) ='\0';   /* get rid of the '\n' */
 
   printf( "CLIENT: Sending to server: %s\n", buffer );
   int n = write( sd, buffer, strlen( buffer ) );    /* or use send()/recv() */
@@ -74,6 +76,7 @@ while ( 1 )    /* TO DO: fix the memory leaks! */
   else if ( n == 0 )
   {
     printf( "CLIENT: rcvd no data; TCP server socket was closed\n" );
+    flag = 1;
     break;
   }
   else /* n > 0 */
@@ -87,9 +90,29 @@ while ( 1 )    /* TO DO: fix the memory leaks! */
 
     short guesses = ntohs( *(short *)(buffer + 1) );
     printf( " -- %d guess%s remaining\n", guesses, guesses == 1 ? "" : "es" );
-    if ( guesses == 0 ) break;
+    if ( guesses == 0 )
+      {
+          flag = 1;
+          break;
+          printf( "CLIENT: you lost!\n" );
+      }
+    int total = 0;
+    for (int i = 3; i < 8; i++)
+    {
+        if (!(*(buffer + i) < 65 || *(buffer + i) > 90))
+        {
+            total++;
+        }
+    }
+    if (total == 5)
+    {
+        printf( "CLIENT: you won!\n" );
+        flag = 1;
+        break;
+    }
   }
-
+  extra = (length + extra) % 5;
+  if (flag) {break;}
 }
 
 
