@@ -19,15 +19,98 @@ extern int total_wins;
 extern int total_losses;
 extern char **words;
 // Global flag to control the server loop
-volatile bool game_over = false;
+volatile bool end = false; 
+
+void *handle_client(void *arg, char **dictionary, int num_words) {
+    int client_socket = *((int *)arg);
+    // Select a random word from the dictionary using the seeded random number generator
+    int random_index = rand() % num_words;
+    char *target_word = *(dictionary + random_index);
+    int guesses = 0; // Initialize guesses for this thread
+    bool game_over = false;
+
+    while (!game_over) {
+
+    // Receive a guess from the client
+    char *guess = calloc (MAX_WORD_LENGTH + 1, sizeof(char));
+    ssize_t bytes_received = recv(client_socket, guess, sizeof(guess) - 1, 0);
+    
+    if (bytes_received <= 0) {
+        // Handle client disconnect or error
+        close(client_socket);
+        printf("SERVER: Client disconnected\n");
+        continue;
+    }
+    *(guess + bytes_received) = '\0'; // Null-terminate the received data
+
+    // ... Accept an incoming connection and receive a guess from the client ...
+    // Process the guess and send response
+    char *response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
+    // Implement game logic and generate response here
+    // ... Implement game logic and generate response here ...
+
+    bool is_valid_guess = valid_guess(guess, dictionary, num_words);
+    int correct_guess_count = strcmp(guess, target_word) == 0 ? MAX_WORD_LENGTH : partial_match(guess, target_word);
+   
+    // Calculate the remaining guesses based on the total guesses and the guesses made by the client
+    
+    
+    // Generate the response based on the guess and the target word
+    char *response_word = calloc(MAX_WORD_LENGTH + 1, sizeof(char));
+    for (int i = 0; i < MAX_WORD_LENGTH; i++) {
+        if (*(guess + i) == *(target_word + i)) {
+            *(response_word + i) = toupper(*(guess + i)); // Uppercase for correct position
+        } else if (strchr(target_word, *(guess + i))) {
+            *(response_word + i) = tolower(*(guess + i)); // Lowercase for correct letter in wrong position
+        } else {
+            *(response_word + i) = '-'; // Dash for incorrect letter
+        }
+    }
+    *(response_word + MAX_WORD_LENGTH) = '\0';
+
+    *(response + 0) = is_valid_guess ? 'Y' : 'N'; // Valid guess indicator
+    if (is_valid_guess) {
+        guesses++;
+    }
+    *(short *)(response + 1) = htons(MAX_GUESSES - guesses); // 2 byte remaining guesses
+    strncpy(response + 3, response_word, 5); // Copy 5 byte result word  
+
+
+    send(client_socket, response, 8, 0); // Send 8 bytes
+
+    if (is_valid_guess && correct_guess_count == MAX_WORD_LENGTH) {
+            printf("THREAD %ld: game over; word was %s!\n", pthread_self(), target_word);
+            game_over = true; // Set the game over flag
+        } else if (MAX_GUESSES - guesses == 0) {
+            printf("THREAD %ld: game over; out of guesses\n", pthread_self());
+            game_over = true; // Set the game over flag
+        }
+
+        // Close the client socket after handling the request
+        
+    // Free memory  
+    free(guess);
+    free(response);
+    free(response_word);
+    if (game_over) {
+        printf("hug\n");
+        close(client_socket);
+            printf("THREAD %ld: Client connection closed\n", pthread_self());
+            break;
+        }
+    }
+    free(arg); // Free the memory allocated for the client socket
+    return NULL;
+}
 
 // Signal handler function for SIGUSR1
 void sigusr1_handler(int signo) {
     if (signo == SIGUSR1) {
         printf("MAIN: SIGUSR1 received; Wordle server shutting down...\n");
-        game_over = true; // Set the game over flag
+        end = true; // Set the game over flag
     }
 }
+
 
 bool valid_guess(const char *guess, const char **dictionary, int num_words) {
     for (int i = 0; i < num_words; i++) {
@@ -123,9 +206,7 @@ int wordle_server(int argc, char **argv) {
     fclose(file);
     *(dictionary + i) = NULL; // Set the last entry to NULL for easier iteration.
 
-    // Select a random word from the dictionary using the seeded random number generator
-    int random_index = rand() % num_words;
-    char *target_word = *(dictionary + random_index);
+    
 
     // Create a TCP socket
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -134,110 +215,38 @@ int wordle_server(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    // Bind the socket to a specific address and port
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(listener_port);
-
-    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
-        perror("Error binding socket");
-        exit(EXIT_FAILURE);
-    }
-
-    // Listen for incoming connections
-    if (listen(server_socket, 10) == -1) {
-        perror("Error listening");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("MAIN: Wordle server listening on port %d\n", listener_port);
-    // Main server loop: accept incoming connections and create a child thread to handle each client.
-    signal(SIGUSR1, sigusr1_handler);
-    // Accept an incoming connection
-    struct sockaddr_in client_addr;
-    socklen_t client_addr_len = sizeof(client_addr);
-    int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
-    if (client_socket == -1) {
-        perror("Error accepting client connection");
-    }
-
-    printf("SERVER: Accepted client connection\n");
-    int guesses = 0; //placeholder
-    while (!game_over) {
-
-    // Receive a guess from the client
-    char *guess = calloc (MAX_WORD_LENGTH + 1, sizeof(char));
-    ssize_t bytes_received = recv(client_socket, guess, sizeof(guess) - 1, 0);
-    
-    if (bytes_received <= 0) {
-        // Handle client disconnect or error
-        close(client_socket);
-        printf("SERVER: Client disconnected\n");
-        continue;
-    }
-    *(guess + bytes_received) = '\0'; // Null-terminate the received data
-
-    // ... Accept an incoming connection and receive a guess from the client ...
-    // Process the guess and send response
-    char *response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
-    // Implement game logic and generate response here
-    // ... Implement game logic and generate response here ...
-
-    bool is_valid_guess = valid_guess(guess, dictionary, num_words);
-    int correct_guess_count = strcmp(guess, target_word) == 0 ? MAX_WORD_LENGTH : partial_match(guess, target_word);
-   
-    // Calculate the remaining guesses based on the total guesses and the guesses made by the client
-    
-    
-    // Generate the response based on the guess and the target word
-    char *response_word = calloc(MAX_WORD_LENGTH + 1, sizeof(char));
-    for (int i = 0; i < MAX_WORD_LENGTH; i++) {
-        if (*(guess + i) == *(target_word + i)) {
-            *(response_word + i) = toupper(*(guess + i)); // Uppercase for correct position
-        } else if (strchr(target_word, *(guess + i))) {
-            *(response_word + i) = tolower(*(guess + i)); // Lowercase for correct letter in wrong position
-        } else {
-            *(response_word + i) = '-'; // Dash for incorrect letter
-        }
-    }
-    *(response_word + MAX_WORD_LENGTH) = '\0';
-
-    *(response + 0) = is_valid_guess ? 'Y' : 'N'; // Valid guess indicator
-    if (is_valid_guess) {
-        guesses++;
-    }
-    *(short *)(response + 1) = htons(MAX_GUESSES - guesses); // 2 byte remaining guesses
-    strncpy(response + 3, response_word, 5); // Copy 5 byte result word  
-
-
-    send(client_socket, response, 8, 0); // Send 8 bytes
-
-    if (is_valid_guess && correct_guess_count == MAX_WORD_LENGTH) {
-            printf("THREAD %ld: game over; word was %s!\n", pthread_self(), target_word);
-            game_over = true; // Set the game over flag
-        } else if (MAX_GUESSES - guesses == 0) {
-            printf("THREAD %ld: game over; out of guesses\n", pthread_self());
-            game_over = true; // Set the game over flag
+    while (!end) {
+        // Accept an incoming connection
+        struct sockaddr_in client_addr;
+        socklen_t client_addr_len = sizeof(client_addr);
+        int client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_len);
+        if (client_socket == -1) {
+            perror("Error accepting client connection");
+            continue; // Continue to the next iteration if an error occurs
         }
 
-        // Close the client socket after handling the request
-        
-    // Free memory  
-    free(guess);
-    free(response);
-    free(response_word);
-    if (game_over) {
-        close(client_socket);
-            break;
+        printf("SERVER: Accepted client connection\n");
+
+        // Create a new thread to handle the client
+        pthread_t tid;
+        int *client_socket_ptr = (int *)malloc(sizeof(int));
+        if (!client_socket_ptr) {
+            perror("Error allocating memory for client socket pointer");
+            close(client_socket);
+            continue; // Continue to the next iteration if memory allocation fails
         }
-    // Send the response message to the client
-    //printf("%s", response);
-    // Close the client socket after handling the request
-    // close(client_socket);
-    // printf("THREAD %ld: client connection closed\n", pthread_self());
+        *client_socket_ptr = client_socket;
+        if (pthread_create(&tid, NULL, handle_client, client_socket_ptr) != 0) {
+            perror("Error creating thread for client");
+            free(client_socket_ptr);
+            close(client_socket);
+        }
+        //pthread_detach(tid); // Detach the thread to clean up automatically
+
+        // Continue accepting more connections in the main loop
     }
+    
+
 
  // The server should never reach this point.
     for(int i = 0; i < num_words; i++) {
