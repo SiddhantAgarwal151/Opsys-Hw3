@@ -45,7 +45,12 @@ void *handle_client(void * arg){
         printf("THREAD %lu: rcvd guess: %s\n",threadID,buffer);
 
         //=================================Process Data=======================================
+        // casting every words into lower case
+        for (int i = 0; *(buffer+i); i++) {
+            *(buffer+i) = tolower(*(buffer+i));
+        }
         
+
     }
 }
 
@@ -64,6 +69,7 @@ int wordle_server(int argc, char **argv){
     char *dictionary_filename = *(argv + 3);
     int num_words = atoi(*(argv + 4));
 
+    srand(seed);
 
     // Store valid words into dictionary
     char **dictionary = (char **)calloc(num_words + 1,sizeof(char *)); // +1 for NULL pointer
