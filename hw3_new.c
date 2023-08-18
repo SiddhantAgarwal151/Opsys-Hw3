@@ -38,7 +38,7 @@ typedef struct{
 
 bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
     for (int i = 0; i < dictSize; i++) {
-        if (strcmp(guess, dictionary[i]) == 0) {
+        if (strncmp(guess, dictionary[i],MAX_WORD_LENGTH-1) == 0) {
             return true;
         }
     }
@@ -120,9 +120,9 @@ void *handle_client(void * arg){
     char* hiddenWord = calloc(MAX_WORD_LENGTH,sizeof(char));
     strcpy(hiddenWord, *(dictionary + randomIndex));
     pthread_t threadID = pthread_self();
-    printf("THREAD %lu: waiting for guess\n",threadID);
     short guessRemaining = MAX_GUESSES;
 
+    printf("%s\n",hiddenWord);
     //---------------------------Client Waiting Messages----------------------------------
     char* guess = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
     while(guessRemaining>=0){
