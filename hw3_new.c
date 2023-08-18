@@ -18,21 +18,99 @@ extern char **words;
 // Constants
 #define MAX_WORD_LENGTH 6
 #define MAX_GUESSES 6
+#define INVALID_GUESS 0
+#define WRONG_GUESS 1
+#define CORRECT_GUESS 2
+
+bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
+    for (int i = 0; i < dictSize; i++) {
+        if (strcmp(guess, dictionary[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int generateResult(const char *hiddenWord, const char *guess, char **dictionary, int dictSize, char *result) {
+    if (!isWordInDictionary(guess, dictionary, dictSize)) {
+        strcpy(result, "?????");
+        return INVALID_GUESS;
+    }
+    char* guessCopy = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+    char* hiddenWordCopy = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+    strcpy(guessCopy,guess);
+    strcpy(hiddenWordCopy,hiddenWord);
+
+    // Initialize result to "?????"
+    strcpy(result, "?????");
+
+    // Step 1: Handle exact matches (uppercase letters)
+    for (int i = 0; i < 5; i++) {
+        if (guess[i] == hiddenWordCopy[i]) {
+            result[i] = hiddenWordCopy[i] - 32;  // Convert to uppercase
+            guessCopy[i] = '-';
+            hiddenWordCopy[i] = '-';
+        }
+    }
+
+    // If the guess is valid, return
+    if(strcmp(guessCopy,hiddenWordCopy)==0){
+        return CORRECT_GUESS;
+    }
+
+    // Step 2: Handle lowercase letters (letters in hidden word but not in correct position)
+    for (int i = 0; i < 5; i++) {
+        if (result[i] != '?' || guessCopy[i] == '-') {
+            continue;  // Skip if already matched or already processed
+        }
+        for (int j = 0; j < 5; j++) {
+            if (guess[i] == hiddenWordCopy[j]) {
+                result[i] = hiddenWordCopy[j];
+                guessCopy[i] = '-';
+                hiddenWordCopy[j] = '-';
+                break;
+            }
+        }
+    }
+
+    // Step 3: Handle '-' (incorrect letters not in hidden word)
+    for (int i = 0; i < 5; i++) {
+        if (result[i] == '?' && guessCopy[i] != '-') {
+            result[i] = '-';
+        }
+    }
+
+    // Step 4: Handle duplicates
+    for (int i = 0; i < 5; i++) {
+        if (guessCopy[i] != '-') {
+            for (int j = 0; j < 5; j++) {
+                if (guessCopy[i] == hiddenWordCopy[j]) {
+                    if (result[j] == '?') {
+                        result[j] = hiddenWordCopy[j];
+                    }
+                }
+            }
+        }
+    }
+    return WRONG_GUESS;
+}
 
 
 /* The actual Wordle Logic would be implemented under threads*/
-void *handle_client(void * arg){
+void *handle_client(void * arg, char **dictionary, int num_words){
     int client_fd = *((int *)arg);
+    int randomIndex = rand() % num_words;
+    char *hiddenWord = *(dictionary + randomIndex);
     pthread_t threadID = pthread_self();
     printf("THREAD %lu: waiting for guess\n",threadID);
     short guessRemaining = MAX_GUESSES;
 
     //---------------------------Client Waiting Messages----------------------------------
-    char* buffer = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
-    while(1){
+    char* guess = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+    while(guessRemaining>=0){
         //================================Receiving Data======================================
         printf("THREAD %lu: waiting for guess\n",threadID);
-        int bytesRead = recv(client_fd, buffer, MAX_WORD_LENGTH, 0);
+        int bytesRead = recv(client_fd, guess, MAX_WORD_LENGTH, 0);
         if (bytesRead == -1){
             perror("Error receiving data");
             break;
@@ -41,18 +119,33 @@ void *handle_client(void * arg){
             printf("Client disconnected\n");
             break;
         }
-        buffer[bytesRead] = '\0';
-        printf("THREAD %lu: rcvd guess: %s\n",threadID,buffer);
+        guess[bytesRead] = '\0';
+        printf("THREAD %lu: rcvd guess: %s\n",threadID,guess);
+        guessRemaining--;
 
         //=================================Process Data=======================================
         // casting every words into lower case
-        for (int i = 0; *(buffer+i); i++) {
-            *(buffer+i) = tolower(*(buffer+i));
+        for (int i = 0; *(guess+i); i++) {
+            *(guess+i) = tolower(*(guess+i));
         }
-        
+        char* result = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+        int status = generateResult(hiddenWord,guess,dictionary,num_words,result);
+
+        //================================Process the guess result============================
+        printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
+        if(status == CORRECT_GUESS){
+            
+            printf("THREAD %lu: game over; word was %s!\n",threadID,result);
+            break;
+        }
+
+
 
     }
 }
+
+
+
 
 
 int wordle_server(int argc, char **argv){
@@ -87,7 +180,7 @@ int wordle_server(int argc, char **argv){
     printf("MAIN: seeded pseudo-random number generator with %d\n",seed);
 
     int i = 0;
-    char *line = calloc(MAX_WORD_LENGTH+1,sizeof(char));
+    char *line = calloc(MAX_WORD_LENGTH,sizeof(char));
 
     while (fgets(line, sizeof(line), file) != NULL) {
         // Remove newline character from the end of the word.
