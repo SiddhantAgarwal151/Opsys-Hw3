@@ -89,7 +89,6 @@ while ( 1 )    /* TO DO: fix the memory leaks! */
     printf( " -- %d guess%s remaining\n", guesses, guesses == 1 ? "" : "es" );
     if ( guesses == 0 ) break;
   }
-    printf("%s", buffer + 3);
 
 }
 
