@@ -29,6 +29,13 @@ struct ServerReply{
     char* result;
 };
 
+typedef struct{
+    int client_sd;
+    char** dictionary;
+    int numWords;
+}threadArgs;
+
+
 bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
     for (int i = 0; i < dictSize; i++) {
         if (strcmp(guess, dictionary[i]) == 0) {
@@ -104,10 +111,14 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
 
 
 /* The actual Wordle Logic would be implemented under threads*/
-void *handle_client(void * arg, char **dictionary, int num_words){
-    int client_sd = *((int *)arg);
+void *handle_client(void * arg){
+    threadArgs* args = (threadArgs*) arg;
+    int client_sd = args->client_sd;
+    char** dictionary = args->dictionary;
+    int num_words = args->numWords;
     int randomIndex = rand() % num_words;
-    char *hiddenWord = *(dictionary + randomIndex);
+    char* hiddenWord = calloc(MAX_WORD_LENGTH,sizeof(char));
+    strcpy(hiddenWord, *(dictionary + randomIndex));
     pthread_t threadID = pthread_self();
     printf("THREAD %lu: waiting for guess\n",threadID);
     short guessRemaining = MAX_GUESSES;
@@ -276,7 +287,11 @@ int wordle_server(int argc, char **argv){
 
     //---------------------------Application Layer Multithread----------------------------------
         pthread_t thread;
-        if (pthread_create(&thread, NULL, handle_client, &newsd) != 0) {
+        threadArgs args;
+        args.client_sd = newsd;
+        args.dictionary = dictionary;
+        args.numWords = num_words;
+        if (pthread_create(&thread, NULL, handle_client, &args) != 0) {
             perror("Error creating thread");
             close(newsd);
             continue;
