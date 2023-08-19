@@ -70,7 +70,7 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
     }
 
     // If the guess is valid, return
-    if(strcmp(guessCopy,hiddenWordCopy)==0){
+    if(strncmp(guessCopy,hiddenWordCopy,MAX_WORD_LENGTH-1)==0){
         printf("yes\n");
         free(guessCopy);
         free(hiddenWordCopy);
@@ -428,25 +428,17 @@ int wordle_server(int argc, char **argv) {
     printf("MAIN: Wordle server listening on port {%d}\n",listener_port);
 
     // Set listener socket to non-blocking
-    int flags = fcntl(listener, F_GETFL, 0);
-    fcntl(listener, F_SETFL, flags | O_NONBLOCK);
+    //int flags = fcntl(listener, F_GETFL, 0);
+    //fcntl(listener, F_SETFL, flags | O_NONBLOCK);
      //-----------------------------Receive Client Connection----------------------------------
     while(!signal_received){
         // Accept an incoming connection
         struct sockaddr_in remote_client;
         int addrlen = sizeof( remote_client );
         int newsd = accept( listener, (struct sockaddr *)&remote_client,(socklen_t *)&addrlen );
-        // if (newsd == -1){
-        //     if (errno == EWOULDBLOCK) {
-        //         continue; 
-        //     }
-        //     else {
-        //         perror("accept");
-        //         break;
-        //     }
-            
-      //  }
-        
+        if (newsd == -1){
+            perror( "accept() failed" ); continue; 
+        }
         printf("MAIN: rcvd incoming connection request\n");
 
     //---------------------------Application Layer Multithread----------------------------------
