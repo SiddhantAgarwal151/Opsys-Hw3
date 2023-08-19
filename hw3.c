@@ -30,7 +30,8 @@ extern int total_wins;
 extern int total_losses;
 extern char **words;
 // Global flag to control the server loop
-volatile int end = 0;
+int end = 0;
+int listener;
 
 bool isWordInDictionary(const char *guess, char **dictionary, int dictSize) {
     for (int i = 0; i < dictSize; i++) {
@@ -65,7 +66,6 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
 
     // If the guess is valid, return
     if(strncmp(guessCopy,hiddenWordCopy,MAX_WORD_LENGTH-1)==0){
-        printf("yes\n");
         free(guessCopy);
         free(hiddenWordCopy);
         return CORRECT_GUESS;
@@ -132,6 +132,12 @@ void *handle_client(void * arg){
         char* guess = (char*)calloc(MAX_WORD_LENGTH + 1,sizeof(char));
         char* result = (char*)calloc(MAX_WORD_LENGTH + 1,sizeof(char));
         char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
+        if (end) {
+            free(guess);
+            free(response);
+            free(result);
+            break; 
+        }
         int bytesRead = recv(client_sd, guess, MAX_WORD_LENGTH, 0);
         if (bytesRead == -1){
             perror("Error receiving data");
@@ -205,6 +211,7 @@ void *handle_client(void * arg){
     
     free(hiddenWord);
     close(client_sd);
+    pthread_exit(NULL); // You can pass an exit status if needed
 }
 
 
@@ -212,7 +219,9 @@ void *handle_client(void * arg){
 void sigusr1_handler(int signo) {
     if (signo == SIGUSR1) {
         printf("MAIN: SIGUSR1 rcvd; Wordle server shutting down...\n");
+        close(listener);
         end = 1; // Set the flag to initiate server shutdown
+        exit(1);
     }
 }
 
@@ -334,7 +343,7 @@ int wordle_server(int argc, char **argv) {
         pthread_detach(thread);
     }
     
-    close(listener);
+    //close(listener);
     
 
  // The server should never reach this point.
