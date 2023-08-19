@@ -160,10 +160,6 @@ void *handle_client(void * arg){
         
         if(status == CORRECT_GUESS){
             guessRemaining--;
-            // struct ServerReply reply;
-            // reply.validGuess = 'Y';
-            // reply.guessesRemaining = htons(guessRemaining);
-            // reply.result = result;
             *(response + 0) = 'Y'; 
             strncpy(response + 3, result, 5); // Copy 5 byte result word  
             *(short *)(response + 1) = htons(guessRemaining); // 2 byte remaining guesses
@@ -266,6 +262,10 @@ int wordle_server(int argc, char **argv) {
 
         // Allocate memory for the word and copy it into the dictionary.
         //*(dictionary + i) = calloc(strlen(line) + 1, sizeof(char));
+        for (int j = 0; *(line+j); j++) {
+            *(line+j) = tolower(*(line+j));
+        }
+
         *(dictionary + i) = strdup(line);
         if (!*(dictionary + i)) {
             fprintf(stderr, "ERROR: Memory allocation failed for dictionary word\n");
@@ -281,6 +281,9 @@ int wordle_server(int argc, char **argv) {
 
     fclose(file);
     *(dictionary + i) = NULL; // Set the last entry to NULL for easier iteration.
+
+
+ 
 
     //--------------------------Network Setup---------------------------------------------------
     int listener = socket(AF_INET, SOCK_STREAM, 0);
