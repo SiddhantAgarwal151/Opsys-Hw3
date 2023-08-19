@@ -46,8 +46,8 @@ int generateResult(const char *hiddenWord, const char *guess, char **dictionary,
         strcpy(result, "?????");
         return INVALID_GUESS;
     }
-    char* guessCopy = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
-    char* hiddenWordCopy = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+    char* guessCopy = (char*)calloc(MAX_WORD_LENGTH + 1,sizeof(char));
+    char* hiddenWordCopy = (char*)calloc(MAX_WORD_LENGTH + 1,sizeof(char));
     strcpy(guessCopy,guess);
     strcpy(hiddenWordCopy,hiddenWord);
 
@@ -129,8 +129,8 @@ void *handle_client(void * arg){
     while(guessRemaining>=0){
         //================================Receiving Data======================================
         printf("THREAD %lu: waiting for guess\n",threadID);
-        char* guess = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
-        char* result = (char*)calloc(MAX_WORD_LENGTH,sizeof(char));
+        char* guess = (char*)calloc(MAX_WORD_LENGTH + 1,sizeof(char));
+        char* result = (char*)calloc(MAX_WORD_LENGTH + 1,sizeof(char));
         char* response = calloc(8, sizeof(char)); // Adjust the buffer size as needed
         int bytesRead = recv(client_sd, guess, MAX_WORD_LENGTH, 0);
         if (bytesRead == -1){
