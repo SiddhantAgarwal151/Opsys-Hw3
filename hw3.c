@@ -29,6 +29,9 @@ extern int total_guesses;
 extern int total_wins;
 extern int total_losses;
 extern char **words;
+int num_hidden_words = 0;
+
+pthread_mutex_t words_mutex = PTHREAD_MUTEX_INITIALIZER; // Initialize a mutex
 // Global flag to control the server loop
 int end = 0;
 int listener;
@@ -120,6 +123,14 @@ void *handle_client(void * arg){
     int randomIndex = rand() % num_words;
     char* hiddenWord = calloc(MAX_WORD_LENGTH,sizeof(char));
     strcpy(hiddenWord, *(dictionary + randomIndex));
+    // Inside your code where you modify num_hidden_words and words
+    pthread_mutex_lock(&words_mutex); // Acquire the lock
+    num_hidden_words++;
+    words = realloc(words, (num_hidden_words + 1) * sizeof(char *));
+    *(words + num_hidden_words - 1) = calloc(MAX_WORD_LENGTH + 1, sizeof(char));
+    strcpy(*(words + num_hidden_words - 1), *(dictionary + randomIndex));
+    pthread_mutex_unlock(&words_mutex); // Release the lock
+
     //hiddenWord = "sonic";
     pthread_t threadID = pthread_self();
     short guessRemaining = MAX_GUESSES;
@@ -160,6 +171,7 @@ void *handle_client(void * arg){
         
         if(status == CORRECT_GUESS){
             guessRemaining--;
+            total_guesses++;
             *(response + 0) = 'Y'; 
             strncpy(response + 3, result, 5); // Copy 5 byte result word  
             *(short *)(response + 1) = htons(guessRemaining); // 2 byte remaining guesses
@@ -169,9 +181,11 @@ void *handle_client(void * arg){
             }
             printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
             printf("THREAD %lu: game over; word was %s!\n",threadID,result);
+            total_wins++;
             break;
         }
         else if(status == WRONG_GUESS){
+            total_guesses++;
             guessRemaining--;
             *(response + 0) = 'Y'; 
             strncpy(response + 3, result, 5); // Copy 5 byte result word  
@@ -183,6 +197,7 @@ void *handle_client(void * arg){
             printf("THREAD %lu: sending reply: %s (%d guesses left)\n",threadID,result,guessRemaining);
             if (guessRemaining == 0) {
                 printf("THREAD %ld: game over; word was %s!\n", pthread_self(), hiddenWord);
+                total_losses++;
             }
         }
         else if(status == INVALID_GUESS){
@@ -217,6 +232,15 @@ void sigusr1_handler(int signo) {
         printf("MAIN: SIGUSR1 rcvd; Wordle server shutting down...\n");
         close(listener);
         end = 1; // Set the flag to initiate server shutdown
+        printf("MAIN: valid guesses: %d\n", total_guesses);
+        printf("MAIN: win/loss: %d/%d\n", total_wins, total_losses);
+        for (int i = 0; i < num_hidden_words; i++) {
+            printf("MAIN: word #%d: %s\n", i + 1, *(words + i));
+            free(*(words + i));
+        }
+        free(words);
+
+
         exit(1);
     }
 }
